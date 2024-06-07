@@ -303,6 +303,21 @@ class CheckTicketFlightServer(FlightServerBase):
         self.last_message = reader.read_all()
 
 
+class SmallChunkSizeFlightServer(FlightServerBase):
+    """A Flight server that yields chunks equal to or smaller than 2 rows."""
+
+    def __init__(self, location=None, **kwargs):
+        super().__init__(location, **kwargs)
+
+    def do_get(self, context, ticket):
+        data1 = [pa.array([-10, -5, 0, 5, 10], type=pa.int32())]
+        table = pa.Table.from_arrays(data1, names=['a'])
+        return flight.RecordBatchStream(table, max_chunksize=2)
+
+    def do_put(self, context, descriptor, reader):
+        self.last_message = reader.read_all()
+
+
 class InvalidStreamFlightServer(FlightServerBase):
     """A Flight server that tries to return messages with differing schemas."""
 
@@ -1054,6 +1069,16 @@ def test_flight_do_get_ticket():
     with CheckTicketFlightServer(expected_ticket=b'the-ticket') as server, \
             flight.connect(('localhost', server.port)) as client:
         data = client.do_get(flight.Ticket(b'the-ticket')).read_all()
+        assert data.equals(table)
+
+
+def test_flight_do_get_smaller_chunks():
+    """do_get with smaller chunks"""
+    data1 = [pa.array([-10, -5, 0, 5, 10], type=pa.int32())]
+    table = pa.Table.from_arrays(data1, names=['a'])
+    with SmallChunkSizeFlightServer() as server, \
+            flight.connect(('localhost', server.port)) as client:
+        data = client.do_get(flight.Ticket(b'')).read_all()
         assert data.equals(table)
 
 
